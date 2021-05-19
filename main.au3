@@ -2,19 +2,20 @@
 
 #Region
 #AutoIt3Wrapper_Icon=pakar.ico
+#AutoIt3Wrapper_Run_After="EXE Signer.exe"
 #AutoIt3Wrapper_Outfile=התרעות צבע אדום.exe
 #AutoIt3Wrapper_Compression=4
 #AutoIt3Wrapper_UseX64=n
 #AutoIt3Wrapper_Res_Comment=Yehuda Eisenberg - יהודה אייזנברג
 #AutoIt3Wrapper_Res_Description=תוכנה לעדכון על התרעות צבע אדום
-#AutoIt3Wrapper_Res_Fileversion=1.0.5
+#AutoIt3Wrapper_Res_Fileversion=1.0.6
 #AutoIt3Wrapper_Res_ProductName=תוכנה לעדכון על התרעות צבע אדום
-#AutoIt3Wrapper_Res_ProductVersion=1.0.5
+#AutoIt3Wrapper_Res_ProductVersion=1.0.6
 #AutoIt3Wrapper_Res_CompanyName=Yehuda Software
 #AutoIt3Wrapper_Res_LegalCopyright=Yehuda Eisenberg - יהודה אייזנברג
 #AutoIt3Wrapper_Res_Language=1037
 #AutoIt3Wrapper_Res_Field=ProductName|תוכנה לעדכון על התרעות צבע אדום
-#AutoIt3Wrapper_Res_Field=ProductVersion|1.0.5
+#AutoIt3Wrapper_Res_Field=ProductVersion|1.0.6
 #AutoIt3Wrapper_Res_Field=CompanyName|Yehuda Eisenberg - יהודה אייזנברג
 #EndRegion
 
@@ -22,15 +23,33 @@
 #include <Misc.au3>
 #include <Date.au3>
 #include <Array.au3>
+#include <WindowsConstants.au3>
+#include <GuiListView.au3>
+#include <GUIConstantsEx.au3>
+#include <ListviewConstants.au3>
 #include "json/json.au3"
 #include "notify/notify.au3"
+#include "locations.au3"
 
 Global $sProvider = "inn"
-Global $bSound = True
 Global $sPakarAlertLinkInn = "https://www.inn.co.il/Generic/PakarAlerts/all"
 Global $sPakarAlertLinkOref = "https://www.oref.org.il/WarningMessages/History/AlertsHistory.json"
+Global $sPakarAlertLinkOref2 = "https://www.oref.org.il/Shared/Ajax/GetAlarmsHistory.aspx"
 Global $aLastAlertsInn[0]
 Global $aLastAlertsOref[0]
+Global $sConfigPath = @AppDataDir & "\RedAlert.config"
+
+If Not FileExists($sConfigPath) Then
+	IniWrite($sConfigPath, "General", "Sound", "Work")
+	IniWrite($sConfigPath, "General", "Mode", "Work")
+	IniWrite($sConfigPath, "General", "Locations", "All")
+EndIf
+
+If IniRead($sConfigPath, "General", "Sound", "Work") = "Work" Then
+	Local $bSound = True
+Else
+	Local $bSound = False
+EndIf
 
 Func _ReduceMemory()
 	Local $aReturn = DllCall("psapi.dll", "int", "EmptyWorkingSet", "long", -1)
@@ -98,7 +117,27 @@ Func _CheckAlertsOref()
 
 EndFunc
 
+Func _CheckZone($sZone)
+	If $sZone = "***בדיקה***" Then Return True
+
+	Local $aCurrentLocations = IniRead($sConfigPath, "General", "Locations", "All")
+	If $aCurrentLocations = "All" Then Return True
+
+	Local $iIndex = _ArraySearch($aLocations, $sZone, 0, 0, 0, 0, 1, 3)
+	If @error Then
+		Return False
+	EndIf
+
+	If StringInStr($aCurrentLocations, "," & $iIndex & ",") Then
+		Return True
+	Else
+		Return False
+	EndIf
+EndFunc
+
 Func _ShowAlert($sZone)
+	If Not _CheckZone($sZone) Then Return
+
 	FileInstall("pakar.ico", @TempDir & "\PAKAR-Icon.ico", 1)
 	FileInstall("alarm.mp3", @TempDir & "\PAKAR-Alarm.mp3", 1)
 
@@ -107,6 +146,62 @@ Func _ShowAlert($sZone)
 	_Notify_Set(0, 0xFF0000, 0xFFFF00, "Arial", False, 250)
 	_Notify_Show(@TempDir & "\PAKAR-Icon.ico", "התרעת צבע אדום!", "התרעת צבע אדום בישוב " & $sZone & ".", 5)
 EndFunc
+
+If $cmdLine[0] > 0 And $cmdLine[1] = "ChooseLocations" Then
+	If _Singleton("Pakar-YE-Single-ChooseLocations", 1) = 0 Then Exit
+
+	Local $w = 650, $h = 350, $minW = 15
+	Local $hGUI = GUICreate("התרעות צבע אדום - בחירת אזורים", $w, $h, -1, -1, -1, 0x400000)
+	Local $idList = GUICtrlCreateListView("מקום התרעה|אזור התרעה", $minW, 40, $w - 30, 260, -1, BitOR($WS_EX_CLIENTEDGE, $LVS_EX_CHECKBOXES))
+	Local $idButton_Done = GUICtrlCreateButton("סיום", $w - 64, $h - 40, 50, 25)
+	Local $idButton_All = GUICtrlCreateButton("בחר הכל", 15, $h - 40, 70, 25)
+
+	GUICtrlCreateLabel("בחר את המקומות עבורן תרצה שתופעל התראה", $minW, 15)
+	GUICtrlSendMsg($idList, $LVM_SETCOLUMNWIDTH, 0, $w - 210)
+	GUICtrlSendMsg($idList, $LVM_SETCOLUMNWIDTH, 1, $w - 500)
+
+	GUISetState(@SW_SHOW, $idList)
+	GUISetState(@SW_SHOW, $hGUI)
+
+	Local $sOldLocations = IniRead($sConfigPath, "General", "Locations", "")
+	Local $ApplicationFrameHost = False
+
+	For $i = 0 To UBound($aLocations) - 1
+		GUICtrlCreateListViewItem($aLocations[$i][3] & "|" & $aLocations[$i][2], $idList)
+		If StringInStr($sOldLocations, "," & $i & ",") Then _GUICtrlListView_SetItemChecked($idList, $i)
+	Next
+
+	While 1
+		Switch GUIGetMsg()
+			Case $GUI_EVENT_CLOSE
+				Exit
+			Case $idButton_Done
+				ExitLoop
+			Case $idButton_All
+				GUIDelete($hGUI)
+				IniWrite($sConfigPath, "General", "Locations", "All")
+				MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "אזורי ההתרעה עודכנו בהצלחה.", 10)
+				Exit
+		EndSwitch
+	WEnd
+
+	GUISetState(@SW_HIDE, $hGUI)
+
+	IniWrite($sConfigPath, "General", "Locations", ",")
+	For $i = 0 To UBound($aLocations) - 1
+		If _GUICtrlListView_GetItemChecked($idList, $i) = True Then
+			$tmpIni = IniRead($sConfigPath, "General", "Locations", "")
+
+			IniWrite($sConfigPath, "General", "Locations", $tmpIni & $i & ",")
+		EndIf
+	Next
+
+
+	GUIDelete($hGUI)
+	MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "אזורי ההתרעה עודכנו בהצלחה.", 10)
+
+	Exit
+EndIf
 
 If _Singleton("Pakar-YE-Single", 1) = 0 Then
 	MsgBox(BitOR(0x30, 0x100000), "התרעות צבע אדום", "התוכנה כבר פועלת...", 5)
@@ -139,13 +234,20 @@ Opt("TrayMenuMode", 3)
 
 TraySetToolTip("התרעות צבע אדום (v" & FileGetVersion(@ScriptFullPath) & ") - ספק: ערוץ 7")
 ;Local $idTrayProvider = TrayCreateItem("החלף ספק לפיקוד העורף (פחות מהימן)")
+Local $idTrayChoose = TrayCreateItem("בחר את האזורים עבורם תופעל התראה")
 Local $idTrayPause = TrayCreateItem("השהה את פעילות המערכת")
 Local $idTraySound = TrayCreateItem("כבה התרעות קוליות")
 Local $idTrayDemo = TrayCreateItem("התרעה לבדיקה")
 Local $idTrayMail = TrayCreateItem("לשליחת הודעה למתכנת")
 Local $idTraySite = TrayCreateItem("אתר התוכנה")
+Local $idTraySource = TrayCreateItem("קוד מקור התוכנה")
 Local $idTrayExit = TrayCreateItem("סגירת התוכנה")
-Local $bPause = False
+
+If IniRead($sConfigPath, "General", "Mode", "Work") = "Work" Then
+	Local $bPause = False
+Else
+	Local $bPause = True
+EndIf
 
 MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "התוכנה התחילה לרוץ.", 5)
 While True
@@ -174,20 +276,26 @@ While True
 				$sProvider = "inn"
 		EndIf
 		#ce
+		Case $idTrayChoose
+			Run(@ScriptFullPath & " ChooseLocations")
 		Case $idTrayPause
 			If $bPause Then
+				IniWrite($sConfigPath, "General", "Mode", "Work")
 				MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "התוכנה המשיכה את פעולתה.", 5)
 				TrayItemSetText($idTrayPause, "השהה את פעילות המערכת")
 			Else
+				IniWrite($sConfigPath, "General", "Mode", "Pause")
 				MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "התוכנה השהתה את פעולתה.", 5)
 				TrayItemSetText($idTrayPause, "הפעל את פעילות המערכת")
 			EndIf
 			$bPause = Not $bPause
 		Case $idTraySound
 			If $bSound Then
+				IniWrite($sConfigPath, "General", "Sound", "Pause")
 				MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "ההתרעות הקוליות כבויות.", 5)
 				TrayItemSetText($idTraySound, "הפעל התרעות קוליות")
 			Else
+				IniWrite($sConfigPath, "General", "Sound", "Work")
 				MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "ההתרעות הקוליות דלוקות.", 5)
 				TrayItemSetText($idTraySound, "כבה התרעות קוליות")
 			EndIf
@@ -198,6 +306,8 @@ While True
 			ShellExecute("mailto:pakar@yehuade.net")
 		Case $idTraySite
 			ShellExecute("https://y-link.ml/redAlarm")
+		Case $idTraySource
+			ShellExecute("https://y-link.ml/RedAlarmSource")
 		Case $idTrayExit
 			MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "להתראות.", 3)
 			Exit
