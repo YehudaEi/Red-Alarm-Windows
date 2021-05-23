@@ -1,22 +1,24 @@
 #NoTrayIcon
-
-#Region
+#Region ;**** Directives created by AutoIt3Wrapper_GUI ****
 #AutoIt3Wrapper_Icon=pakar.ico
-#AutoIt3Wrapper_Run_After="EXE Signer.exe"
 #AutoIt3Wrapper_Outfile=התרעות צבע אדום.exe
 #AutoIt3Wrapper_Compression=4
-#AutoIt3Wrapper_UseX64=n
+#AutoIt3Wrapper_UseX64=y
 #AutoIt3Wrapper_Res_Comment=Yehuda Eisenberg - יהודה אייזנברג
-#AutoIt3Wrapper_Res_Description=תוכנה לעדכון על התרעות צבע אדום
-#AutoIt3Wrapper_Res_Fileversion=1.0.6
-#AutoIt3Wrapper_Res_ProductName=תוכנה לעדכון על התרעות צבע אדום
+#AutoIt3Wrapper_Res_Description=התרעות צבע אדום
+#AutoIt3Wrapper_Res_Fileversion=1.0.6.0
+#AutoIt3Wrapper_Res_ProductName=התרעות צבע אדום
 #AutoIt3Wrapper_Res_ProductVersion=1.0.6
 #AutoIt3Wrapper_Res_CompanyName=Yehuda Software
 #AutoIt3Wrapper_Res_LegalCopyright=Yehuda Eisenberg - יהודה אייזנברג
 #AutoIt3Wrapper_Res_Language=1037
-#AutoIt3Wrapper_Res_Field=ProductName|תוכנה לעדכון על התרעות צבע אדום
+#AutoIt3Wrapper_Res_Field=ProductName|התרעות צבע אדום
 #AutoIt3Wrapper_Res_Field=ProductVersion|1.0.6
 #AutoIt3Wrapper_Res_Field=CompanyName|Yehuda Eisenberg - יהודה אייזנברג
+#AutoIt3Wrapper_Run_After="EXE Signer.exe"
+#EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
+
+#Region
 #EndRegion
 
 #include <Inet.au3>
@@ -30,6 +32,7 @@
 #include "json/json.au3"
 #include "notify/notify.au3"
 #include "locations.au3"
+#include <TrayConstants.au3>
 
 Global $sProvider = "inn"
 Global $sPakarAlertLinkInn = "https://www.inn.co.il/Generic/PakarAlerts/all"
@@ -43,12 +46,19 @@ If Not FileExists($sConfigPath) Then
 	IniWrite($sConfigPath, "General", "Sound", "Work")
 	IniWrite($sConfigPath, "General", "Mode", "Work")
 	IniWrite($sConfigPath, "General", "Locations", "All")
+	IniWrite($sConfigPath, "General", "Notification", "System")
 EndIf
 
 If IniRead($sConfigPath, "General", "Sound", "Work") = "Work" Then
 	Local $bSound = True
 Else
 	Local $bSound = False
+EndIf
+
+If IniRead($sConfigPath, "General", "Notification", "System") = "System" Then
+	Local $bNotify = True
+Else
+	Local $bNotify = False
 EndIf
 
 Func _ReduceMemory()
@@ -63,9 +73,7 @@ Func _CheckAlertsInn()
 	HttpSetUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36")
 	Local $sData = BinaryToString(InetRead($sPakarAlertLinkInn), 4)
 	Local $aAlerts = Json_Decode($sData)
-
 	Local $i = 0
-
 	While (StringLen(Json_Get($aAlerts, '["list"][' & $i & ']["RedWebNo"]')) > 0)
 		Local $RedWebNo = Json_Get($aAlerts, '["list"][' & $i & ']["RedWebNo"]')
 		Local $alertId = Json_Get($aAlerts, '["list"][' & $i & ']["TtlUniversalTime"]') & Json_Get($aAlerts, '["list"][' & $i & ']["AlertTime"]') & Json_Get($aAlerts, '["list"][' & $i & ']["Header"]') & Json_Get($aAlerts, '["list"][' & $i & ']["RedWebNo"]')
@@ -81,21 +89,17 @@ Func _CheckAlertsInn()
 		EndIf
 		$i = $i + 1
 	WEnd
-
 	If $i = 0 Then
 		Local $aTmp[0]
 		$aLastAlertsInn = $aTmp
 	EndIf
-
 EndFunc
 
 Func _CheckAlertsOref()
 	HttpSetUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36")
 	Local $sData = BinaryToString(InetRead($sPakarAlertLinkOref), 4)
 	Local $aAlerts = Json_Decode($sData)
-
 	Local $i = 0
-
 	While _DateDiff("s", StringReplace(Json_Get($aAlerts, '[' & $i & ']["alertDate"]'), "-", "/"), _NowCalc()) < 30
 		Local $alertId = Json_Get($aAlerts, '[' & $i & ']["alertDate"]') & "|" & Json_Get($aAlerts, '[' & $i & ']["data"]')
 
@@ -109,12 +113,10 @@ Func _CheckAlertsOref()
 
 		$i = $i + 1
 	WEnd
-
 	If $i = 0 Then
 		Local $aTmp[0]
 		$aLastAlertsOref = $aTmp
 	EndIf
-
 EndFunc
 
 Func _CheckZone($sZone)
@@ -143,8 +145,18 @@ Func _ShowAlert($sZone)
 
 	If $bSound Then _
 		SoundPlay(@TempDir & "\PAKAR-Alarm.mp3", 0)
-	_Notify_Set(0, 0xFF0000, 0xFFFF00, "Arial", False, 250)
-	_Notify_Show(@TempDir & "\PAKAR-Icon.ico", "התרעת צבע אדום!", "התרעת צבע אדום בישוב " & $sZone & ".", 5)
+
+	If $sZone = "בני דרום" Then _
+		SoundPlay(@TempDir & "\PAKAR-Alarm.mp3", 0)
+
+	If $bNotify Then
+		TrayTip("התרעת צבע אדום!", "התרעת צבע אדום בישוב " & $sZone & ".", 5, $TIP_ICONEXCLAMATION)
+		Sleep(3000)
+	Else
+		_Notify_Set(0, 0xFF0000, 0xFFFF00, "Arial", False, 250)
+	    _Notify_Show(@TempDir & "\PAKAR-Icon.ico", "התרעת צבע אדום!", "התרעת צבע אדום בישוב " & $sZone & ".", 5)
+	EndIf
+
 EndFunc
 
 If $cmdLine[0] > 0 And $cmdLine[1] = "ChooseLocations" Then
@@ -204,20 +216,24 @@ If $cmdLine[0] > 0 And $cmdLine[1] = "ChooseLocations" Then
 EndIf
 
 If _Singleton("Pakar-YE-Single", 1) = 0 Then
-	MsgBox(BitOR(0x30, 0x100000), "התרעות צבע אדום", "התוכנה כבר פועלת...", 5)
+	;MsgBox(BitOR(0x30, 0x100000), "התרעות צבע אדום", "התוכנה כבר פועלת...", 5)
+	TrayTip("התרעת צבע אדום!", "התוכנה כבר פועלת...", 5, $TIP_ICONASTERISK)
+	Sleep(3000)
 	Exit
 EndIf
 
 HttpSetUserAgent("AU3-Pakar-UA")
 Local $sCheckVer = BinaryToString(InetRead("https://test.yehudae.net/pakar-i.php?version=" & FileGetVersion(@ScriptFullPath)), 4)
 If $sCheckVer = "abc" Then
-	MsgBox(BitOR(0x10, 0x100000), "התרעות צבע אדום", "קיימת גרסה מעודכנת יותר. אנא הורד אותה מהקישור:" & @CRLF & "https://files.yehudae.net/redAlarm", 10)
+	;MsgBox(BitOR(0x10, 0x100000), "התרעות צבע אדום", "קיימת גרסה מעודכנת יותר. אנא הורד אותה מהקישור:" & @CRLF & "https://files.yehudae.net/redAlarm", 10)
+	TrayTip("התרעת צבע אדום!", "קיימת גרסה מעודכנת יותר. אנא הורד אותה מהקישור:" & @CRLF & "https://files.yehudae.net/redAlarm", 5, $TIP_ICONASTERISK)
 	ShellExecute("https://y-link.ml/redAlarm")
 	Exit
 EndIf
 
 If Not Ping("inn.co.il", 1000) Then
-	MsgBox(BitOR(0x30, 0x100000), "התרעות צבע אדום", "התוכנה זיהתה בעיה באינטרנט, התוכנה לא תדווח על התרעות עד אשר תתחבר לאינטרנט.")
+	;MsgBox(BitOR(0x30, 0x100000), "התרעות צבע אדום", "התוכנה זיהתה בעיה באינטרנט, התוכנה לא תדווח על התרעות עד אשר תתחבר לאינטרנט.")
+	TrayTip("התרעת צבע אדום!", "התוכנה זיהתה בעיה באינטרנט, התוכנה לא תדווח על התרעות עד אשר תתחבר לאינטרנט.", 5, $TIP_ICONHAND)
 EndIf
 
 FileDelete(@AppDataDir & "\Microsoft\Windows\Start Menu\Programs\StartUp\התראות צבע אדום.exe")
@@ -234,8 +250,9 @@ Opt("TrayMenuMode", 3)
 
 TraySetToolTip("התרעות צבע אדום (v" & FileGetVersion(@ScriptFullPath) & ") - ספק: ערוץ 7")
 ;Local $idTrayProvider = TrayCreateItem("החלף ספק לפיקוד העורף (פחות מהימן)")
-Local $idTrayChoose = TrayCreateItem("בחר את האזורים עבורם תופעל התראה")
+Local $idTrayChoose = TrayCreateItem("בחר איזורי התראה")
 Local $idTrayPause = TrayCreateItem("השהה את פעילות המערכת")
+Local $idTrayNotifyType = TrayCreateItem("השתמש בהתראות מערכת")
 Local $idTraySound = TrayCreateItem("כבה התרעות קוליות")
 Local $idTrayDemo = TrayCreateItem("התרעה לבדיקה")
 Local $idTrayMail = TrayCreateItem("לשליחת הודעה למתכנת")
@@ -245,11 +262,27 @@ Local $idTrayExit = TrayCreateItem("סגירת התוכנה")
 
 If IniRead($sConfigPath, "General", "Mode", "Work") = "Work" Then
 	Local $bPause = False
+	TrayItemSetText($idTrayPause, "השהה את פעילות המערכת")
 Else
 	Local $bPause = True
+	TrayItemSetText($idTrayPause, "הפעל את פעילות המערכת")
 EndIf
 
-MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "התוכנה התחילה לרוץ.", 5)
+If IniRead($sConfigPath, "General", "Notification", "System") = "System" Then
+	TrayItemSetText($idTrayNotifyType, "השתמש בהתרעות תוכנה")
+Else
+	TrayItemSetText($idTrayNotifyType, "השתמש בהתרעות מערכת")
+EndIf
+
+If IniRead($sConfigPath, "General", "Sound", "Work") = "Work" Then
+	TrayItemSetText($idTraySound, "כבה התרעות קוליות")
+Else
+	TrayItemSetText($idTraySound, "הפעל התרעות קוליות")
+EndIf
+
+;MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "התוכנה התחילה לרוץ.", 5)
+TrayTip("התרעת צבע אדום!", "התוכנה התחילה לרוץ.", 5, $TIP_ICONASTERISK)
+
 While True
 	_ReduceMemory()
 
@@ -281,25 +314,42 @@ While True
 		Case $idTrayPause
 			If $bPause Then
 				IniWrite($sConfigPath, "General", "Mode", "Work")
-				MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "התוכנה המשיכה את פעולתה.", 5)
+				;MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "התוכנה המשיכה את פעולתה.", 5)
+				TrayTip("התרעת צבע אדום!", "התוכנה המשיכה את פעולתה.", 5, $TIP_ICONASTERISK)
 				TrayItemSetText($idTrayPause, "השהה את פעילות המערכת")
 			Else
 				IniWrite($sConfigPath, "General", "Mode", "Pause")
-				MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "התוכנה השהתה את פעולתה.", 5)
+				;MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "התוכנה השהתה את פעולתה.", 5)
+				TrayTip("התרעת צבע אדום!", "התוכנה השהתה את פעולתה.", 5, $TIP_ICONEXCLAMATION)
 				TrayItemSetText($idTrayPause, "הפעל את פעילות המערכת")
 			EndIf
 			$bPause = Not $bPause
 		Case $idTraySound
 			If $bSound Then
 				IniWrite($sConfigPath, "General", "Sound", "Pause")
-				MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "ההתרעות הקוליות כבויות.", 5)
+				;MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "ההתרעות הקוליות כבויות.", 5)
+				TrayTip("התרעת צבע אדום!", "ההתרעות הקוליות כבויות.", 5, $TIP_ICONASTERISK)
 				TrayItemSetText($idTraySound, "הפעל התרעות קוליות")
 			Else
 				IniWrite($sConfigPath, "General", "Sound", "Work")
-				MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "ההתרעות הקוליות דלוקות.", 5)
+				;MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "ההתרעות הקוליות דלוקות.", 5)
+				TrayTip("התרעת צבע אדום!", "ההתרעות הקוליות דלוקות.", 5, $TIP_ICONASTERISK)
 				TrayItemSetText($idTraySound, "כבה התרעות קוליות")
 			EndIf
 			$bSound = Not $bSound
+		Case $idTrayNotifyType
+			If $bNotify Then
+				IniWrite($sConfigPath, "General", "Notification", "Program")
+				;MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "סגנון התרעה - תוכנה", 5)
+				TrayTip("התרעת צבע אדום!", "סגנון התרעה - תוכנה", 5, $TIP_ICONASTERISK)
+				TrayItemSetText($idTrayNotifyType, "השתמש בהתרעות מערכת")
+			Else
+				IniWrite($sConfigPath, "General", "Notification", "System")
+				;MsgBox(BitOR(0x40, 0x100000), "התרעות צבע אדום", "סגנון התרעה - מערכת", 5)
+				TrayTip("התרעת צבע אדום!", "סגנון התרעה - מערכת", 5, $TIP_ICONASTERISK)
+				TrayItemSetText($idTrayNotifyType, "השתמש בהתרעות תוכנה")
+			EndIf
+			$bNotify = Not $bNotify
 		Case $idTrayDemo
 			_ShowAlert("***בדיקה***")
 		Case $idTrayMail
